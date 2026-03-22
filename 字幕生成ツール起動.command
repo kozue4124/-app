@@ -88,17 +88,15 @@ with gr.Blocks(title="自動字幕生成", theme=gr.themes.Soft()) as app:
 app.launch(server_name="0.0.0.0", server_port=7860, inbrowser=True)
 APPEOF
 
-# 初回セットアップ
+# セットアップ
 if [ ! -d "venv" ]; then
     echo "初回セットアップ中です（数分かかります）..."
     python3 -m venv venv
-    source venv/bin/activate
-    pip install --quiet --upgrade pip
-    pip install --quiet openai-whisper gradio imageio-ffmpeg
-    echo "セットアップ完了！"
-else
-    source venv/bin/activate
 fi
+source venv/bin/activate
+pip install --quiet --upgrade pip
+pip install --quiet openai-whisper gradio imageio-ffmpeg
+echo "セットアップ完了！"
 
 echo "起動中... ブラウザが自動で開きます"
 export PYTHONHTTPSVERIFY=0
