@@ -5,8 +5,12 @@ cd "$(dirname "$0")"
 
 # app.py を自動生成
 cat > app.py << 'APPEOF'
-import os, tempfile, subprocess
+import os, tempfile, subprocess, ssl
 from pathlib import Path
+
+# SSL証明書エラーの回避（社内ネットワーク等の自己署名証明書対策）
+ssl._create_default_https_context = ssl._create_unverified_context
+
 import whisper
 import gradio as gr
 
