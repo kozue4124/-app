@@ -7,6 +7,8 @@ cd "$(dirname "$0")"
 cat > app.py << 'APPEOF'
 import os, tempfile, subprocess, ssl, urllib.request
 from pathlib import Path
+import imageio_ffmpeg
+FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
 # SSL証明書エラーの回避
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -48,7 +50,7 @@ def run(file, model_label, lang_label, fmt, progress=gr.Progress()):
             if ext in VIDEO_EXT:
                 progress(0.3, desc="動画から音声を取り出しています...")
                 audio = os.path.join(tmp, "audio.wav")
-                r = subprocess.run(["ffmpeg","-i",path,"-vn","-acodec","pcm_s16le","-ar","16000","-ac","1","-y",audio], capture_output=True)
+                r = subprocess.run([FFMPEG,"-i",path,"-vn","-acodec","pcm_s16le","-ar","16000","-ac","1","-y",audio], capture_output=True)
                 if r.returncode != 0:
                     return "", None, "動画の処理に失敗しました。ffmpegをインストールしてください。"
             progress(0.4, desc="AIモデルを読み込んでいます...")
@@ -92,7 +94,7 @@ if [ ! -d "venv" ]; then
     python3 -m venv venv
     source venv/bin/activate
     pip install --quiet --upgrade pip
-    pip install --quiet openai-whisper gradio ffmpeg-python
+    pip install --quiet openai-whisper gradio imageio-ffmpeg
     echo "セットアップ完了！"
 else
     source venv/bin/activate
