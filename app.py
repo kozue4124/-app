@@ -1,0 +1,310 @@
+"""
+自動字幕生成システム - Whisperを使った音声・動画ファイルから字幕を生成するWebアプリ
+"""
+
+import os
+import tempfile
+import subprocess
+from pathlib import Path
+
+import whisper
+import gradio as gr
+
+
+# サポートするファイル形式
+AUDIO_EXTENSIONS = [".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".wma"]
+VIDEO_EXTENSIONS = [".mp4", ".mov", ".avi", ".mkv", ".webm", ".wmv", ".flv"]
+SUPPORTED_EXTENSIONS = AUDIO_EXTENSIONS + VIDEO_EXTENSIONS
+
+# Whisperモデルの選択肢
+MODEL_OPTIONS = {
+    "tiny（最速・低精度）": "tiny",
+    "base（速い・標準精度）": "base",
+    "small（バランス良好）": "small",
+    "medium（高精度）": "medium",
+    "large（最高精度・低速）": "large",
+}
+
+# 言語の選択肢
+LANGUAGE_OPTIONS = {
+    "自動検出": None,
+    "日本語": "ja",
+    "英語": "en",
+    "中国語": "zh",
+    "韓国語": "ko",
+    "フランス語": "fr",
+    "ドイツ語": "de",
+    "スペイン語": "es",
+    "イタリア語": "it",
+    "ポルトガル語": "pt",
+    "ロシア語": "ru",
+}
+
+
+def extract_audio_from_video(video_path: str, output_path: str) -> str:
+    """動画ファイルから音声を抽出する"""
+    cmd = [
+        "ffmpeg",
+        "-i", video_path,
+        "-vn",
+        "-acodec", "pcm_s16le",
+        "-ar", "16000",
+        "-ac", "1",
+        "-y",
+        output_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"音声抽出に失敗しました: {result.stderr}")
+    return output_path
+
+
+def format_timestamp(seconds: float) -> str:
+    """秒数をSRT形式のタイムスタンプに変換する"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millis = int((seconds % 1) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+
+def segments_to_srt(segments: list) -> str:
+    """Whisperのセグメントデータをsrt形式に変換する"""
+    srt_lines = []
+    for i, segment in enumerate(segments, start=1):
+        start = format_timestamp(segment["start"])
+        end = format_timestamp(segment["end"])
+        text = segment["text"].strip()
+        srt_lines.append(f"{i}\n{start} --> {end}\n{text}\n")
+    return "\n".join(srt_lines)
+
+
+def segments_to_vtt(segments: list) -> str:
+    """Whisperのセグメントデータをvtt形式に変換する"""
+    vtt_lines = ["WEBVTT\n"]
+    for i, segment in enumerate(segments, start=1):
+        start = format_timestamp(segment["start"]).replace(",", ".")
+        end = format_timestamp(segment["end"]).replace(",", ".")
+        text = segment["text"].strip()
+        vtt_lines.append(f"{i}\n{start} --> {end}\n{text}\n")
+    return "\n".join(vtt_lines)
+
+
+def segments_to_txt(segments: list) -> str:
+    """Whisperのセグメントデータをプレーンテキストに変換する"""
+    lines = []
+    for segment in segments:
+        start = format_timestamp(segment["start"])
+        end = format_timestamp(segment["end"])
+        text = segment["text"].strip()
+        lines.append(f"[{start} --> {end}] {text}")
+    return "\n".join(lines)
+
+
+def generate_subtitles(
+    file_obj,
+    model_name: str,
+    language: str,
+    output_format: str,
+    progress=gr.Progress(),
+):
+    """
+    アップロードされたファイルから字幕を生成するメイン関数
+
+    Args:
+        file_obj: アップロードされたファイルオブジェクト
+        model_name: Whisperモデル名
+        language: 言語コード（Noneの場合は自動検出）
+        output_format: 出力形式（srt/vtt/txt）
+        progress: Gradioのプログレスバー
+
+    Returns:
+        tuple: (字幕テキスト, 保存ファイルパス, ステータスメッセージ)
+    """
+    if file_obj is None:
+        return "", None, "ファイルをアップロードしてください。"
+
+    file_path = file_obj.name
+    file_ext = Path(file_path).suffix.lower()
+
+    if file_ext not in SUPPORTED_EXTENSIONS:
+        return "", None, f"非対応のファイル形式です。対応形式: {', '.join(SUPPORTED_EXTENSIONS)}"
+
+    try:
+        progress(0.1, desc="ファイルを読み込んでいます...")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audio_path = file_path
+
+            # 動画ファイルの場合は音声を抽出
+            if file_ext in VIDEO_EXTENSIONS:
+                progress(0.2, desc="動画から音声を抽出しています...")
+                audio_path = os.path.join(tmpdir, "audio.wav")
+                extract_audio_from_video(file_path, audio_path)
+
+            progress(0.3, desc=f"Whisperモデル ({model_name}) を読み込んでいます...")
+            model = whisper.load_model(model_name)
+
+            progress(0.5, desc="音声を文字起こししています（ファイルサイズにより時間がかかります）...")
+            transcribe_options = {"verbose": False}
+            if language:
+                transcribe_options["language"] = language
+
+            result = model.transcribe(audio_path, **transcribe_options)
+            segments = result["segments"]
+            detected_lang = result.get("language", "不明")
+
+            progress(0.9, desc="字幕ファイルを生成しています...")
+
+            # 選択した形式で変換
+            if output_format == "srt":
+                subtitle_text = segments_to_srt(segments)
+                ext = "srt"
+            elif output_format == "vtt":
+                subtitle_text = segments_to_vtt(segments)
+                ext = "vtt"
+            else:
+                subtitle_text = segments_to_txt(segments)
+                ext = "txt"
+
+            # 出力ファイルを保存
+            original_name = Path(file_path).stem
+            output_filename = f"{original_name}_subtitle.{ext}"
+            output_path = os.path.join(tempfile.gettempdir(), output_filename)
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(subtitle_text)
+
+            progress(1.0, desc="完了しました！")
+
+            segment_count = len(segments)
+            status = (
+                f"字幕生成完了！\n"
+                f"- 検出言語: {detected_lang}\n"
+                f"- セグメント数: {segment_count}\n"
+                f"- 出力形式: {output_format.upper()}"
+            )
+            return subtitle_text, output_path, status
+
+    except FileNotFoundError as e:
+        if "ffmpeg" in str(e):
+            return "", None, "エラー: ffmpegがインストールされていません。setup.shを実行してください。"
+        return "", None, f"エラー: ファイルが見つかりません: {e}"
+    except Exception as e:
+        return "", None, f"エラーが発生しました: {str(e)}"
+
+
+def build_ui():
+    """GradioのUIを構築する"""
+    with gr.Blocks(
+        title="自動字幕生成システム",
+        theme=gr.themes.Soft(),
+        css="""
+        .container { max-width: 900px; margin: auto; }
+        .header { text-align: center; padding: 20px 0; }
+        """,
+    ) as demo:
+        gr.Markdown(
+            """
+            # 自動字幕生成システム
+            音声・動画ファイルをアップロードするだけで、AIが自動的に字幕を生成します。
+            """,
+            elem_classes=["header"],
+        )
+
+        with gr.Row():
+            with gr.Column(scale=1):
+                gr.Markdown("### 設定")
+
+                file_input = gr.File(
+                    label="音声・動画ファイルをアップロード",
+                    file_types=AUDIO_EXTENSIONS + VIDEO_EXTENSIONS,
+                    type="filepath",
+                )
+
+                model_dropdown = gr.Dropdown(
+                    choices=list(MODEL_OPTIONS.keys()),
+                    value="small（バランス良好）",
+                    label="精度モデルを選択",
+                    info="精度が高いほど時間がかかります",
+                )
+
+                language_dropdown = gr.Dropdown(
+                    choices=list(LANGUAGE_OPTIONS.keys()),
+                    value="自動検出",
+                    label="言語を選択",
+                    info="わからない場合は「自動検出」を選んでください",
+                )
+
+                format_radio = gr.Radio(
+                    choices=["srt", "vtt", "txt"],
+                    value="srt",
+                    label="出力形式を選択",
+                    info="SRT: 多くの動画ソフト対応 / VTT: Web動画向け / TXT: テキストのみ",
+                )
+
+                generate_btn = gr.Button(
+                    "字幕を生成する",
+                    variant="primary",
+                    size="lg",
+                )
+
+            with gr.Column(scale=2):
+                gr.Markdown("### 結果")
+
+                status_box = gr.Textbox(
+                    label="ステータス",
+                    lines=4,
+                    interactive=False,
+                    placeholder="字幕生成が完了するとここに結果が表示されます",
+                )
+
+                subtitle_output = gr.Textbox(
+                    label="生成された字幕",
+                    lines=15,
+                    interactive=False,
+                    placeholder="字幕テキストがここに表示されます",
+                )
+
+                download_btn = gr.File(
+                    label="字幕ファイルをダウンロード",
+                    interactive=False,
+                )
+
+        gr.Markdown(
+            """
+            ### 使い方
+            1. **ファイルをアップロード**: 音声（MP3, WAV等）または動画（MP4, MOV等）をドラッグ＆ドロップ
+            2. **モデルを選択**: 最初は「small（バランス良好）」がおすすめです
+            3. **言語を選択**: 日本語の場合は「日本語」を選ぶと精度が上がります
+            4. **形式を選択**: 動画編集ソフトで使う場合は「srt」を選んでください
+            5. **「字幕を生成する」ボタンをクリック**
+            6. 完了したら字幕ファイルをダウンロードして動画編集ソフトに読み込んでください
+
+            ### 対応ファイル形式
+            - **音声**: MP3, WAV, M4A, AAC, FLAC, OGG, WMA
+            - **動画**: MP4, MOV, AVI, MKV, WebM, WMV, FLV
+            """
+        )
+
+        def on_generate(file_obj, model_display, language_display, output_format, progress=gr.Progress()):
+            model_name = MODEL_OPTIONS.get(model_display, "small")
+            language = LANGUAGE_OPTIONS.get(language_display, None)
+            return generate_subtitles(file_obj, model_name, language, output_format, progress)
+
+        generate_btn.click(
+            fn=on_generate,
+            inputs=[file_input, model_dropdown, language_dropdown, format_radio],
+            outputs=[subtitle_output, download_btn, status_box],
+        )
+
+    return demo
+
+
+if __name__ == "__main__":
+    demo = build_ui()
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        share=False,
+        inbrowser=True,
+    )
