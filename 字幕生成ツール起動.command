@@ -5,11 +5,14 @@ cd "$(dirname "$0")"
 
 # app.py を自動生成
 cat > app.py << 'APPEOF'
-import os, tempfile, subprocess, ssl
+import os, tempfile, subprocess, ssl, urllib.request
 from pathlib import Path
 
-# SSL証明書エラーの回避（社内ネットワーク等の自己署名証明書対策）
+# SSL証明書エラーの回避
 ssl._create_default_https_context = ssl._create_unverified_context
+os.environ["PYTHONHTTPSVERIFY"] = "0"
+os.environ["REQUESTS_CA_BUNDLE"] = ""
+os.environ["CURL_CA_BUNDLE"] = ""
 
 import whisper
 import gradio as gr
@@ -96,5 +99,8 @@ else
 fi
 
 echo "起動中... ブラウザが自動で開きます"
+export PYTHONHTTPSVERIFY=0
+export REQUESTS_CA_BUNDLE=""
+export CURL_CA_BUNDLE=""
 sleep 2 && open http://localhost:7860 &
 python app.py
