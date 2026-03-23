@@ -3,8 +3,17 @@
 
 cd "$(dirname "$0")"
 
-# app.py を最新版で生成
-cat > app.py << 'APPEOF'
+# GitHubから最新のapp.pyをダウンロード（失敗時は内蔵コードを使用）
+GITHUB_MAIN="https://raw.githubusercontent.com/kozue4124/-app/main/app.py"
+GITHUB_BRANCH="https://raw.githubusercontent.com/kozue4124/-app/claude/auto-subtitle-generator-zbRhe/app.py"
+
+if curl -sf --connect-timeout 10 "$GITHUB_MAIN" -o app.py 2>/dev/null; then
+    echo "最新版のapp.pyをダウンロードしました (main)"
+elif curl -sf --connect-timeout 10 "$GITHUB_BRANCH" -o app.py 2>/dev/null; then
+    echo "最新版のapp.pyをダウンロードしました (branch)"
+else
+    echo "オフラインモード: 内蔵コードを使用します"
+    cat > app.py << 'APPEOF'
 """
 自動字幕生成システム - Whisperを使った音声・動画ファイルから字幕を生成するWebアプリ
 """
@@ -120,7 +129,7 @@ def split_text_to_pages(text: str, max_chars: int = 15, max_lines: int = 2) -> l
 def expand_segment(segment: dict, max_chars: int = 15, max_lines: int = 2) -> list:
     """セグメントを字幕エントリのリストに展開する（無音・空テキストはスキップ）"""
     text = segment["text"].strip()
-    if not text:
+    if not text or segment.get("no_speech_prob", 0) > 0.6:
         return []
 
     pages = split_text_to_pages(text, max_chars, max_lines)
@@ -334,6 +343,7 @@ if __name__ == "__main__":
     demo = build_ui()
     demo.launch(server_name="0.0.0.0", server_port=7860, share=False, inbrowser=True)
 APPEOF
+fi
 
 # セットアップ（初回のみ）
 if [ ! -d "venv" ]; then

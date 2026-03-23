@@ -113,7 +113,7 @@ def split_text_to_pages(text: str, max_chars: int = 15, max_lines: int = 2) -> l
 def expand_segment(segment: dict, max_chars: int = 15, max_lines: int = 2) -> list:
     """セグメントを字幕エントリのリストに展開する（無音・空テキストはスキップ）"""
     text = segment["text"].strip()
-    if not text:
+    if not text or segment.get("no_speech_prob", 0) > 0.6:
         return []
 
     pages = split_text_to_pages(text, max_chars, max_lines)
