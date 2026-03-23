@@ -73,6 +73,8 @@ def format_timestamp(seconds: float) -> str:
 _BREAK_PUNCT = set('。、！？…')
 # 'で' は「でした/です」と混在するため除外
 _BREAK_PARTICLES = set('はがをにともへやかねよわ')
+# 改行位置として認める最小文字数（これ未満の位置では改行しない）
+_MIN_BREAK_LEN = 3
 
 
 def find_natural_break(text: str, max_pos: int) -> int:
@@ -84,11 +86,15 @@ def find_natural_break(text: str, max_pos: int) -> int:
     for pos in range(1, limit + 1):
         ch = text[pos - 1]
         if ch in _BREAK_PUNCT:
-            last_punct = pos
+            if pos >= _MIN_BREAK_LEN:
+                last_punct = pos
         elif ch in _BREAK_PARTICLES:
-            last_particle = pos
-        elif ch in (' ', '\u3000') and pos > 1:  # 半角・全角スペースの直前で改行
-            last_space = pos - 1
+            # 語頭の助詞（「もちろん」の「も」など）での誤分断を防ぐ
+            if pos >= _MIN_BREAK_LEN:
+                last_particle = pos
+        elif ch in (' ', '\u3000'):  # 半角・全角スペースの直前で改行
+            if pos - 1 >= _MIN_BREAK_LEN:
+                last_space = pos - 1
     if last_punct:
         return last_punct
     if last_particle:
