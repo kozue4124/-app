@@ -14,6 +14,14 @@ os.environ["PYTHONHTTPSVERIFY"] = "0"
 os.environ["REQUESTS_CA_BUNDLE"] = ""
 os.environ["CURL_CA_BUNDLE"] = ""
 
+# ffmpegのパスをPATHに追加
+try:
+    import imageio_ffmpeg
+    ffmpeg_dir = os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
+    os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ.get("PATH", "")
+except Exception:
+    pass
+
 import whisper
 import gradio as gr
 
