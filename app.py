@@ -164,9 +164,11 @@ def segments_to_txt(segments: list) -> str:
     """Whisperのセグメントデータをプレーンテキストに変換する"""
     lines = []
     for segment in segments:
+        text = segment["text"].strip()
+        if not text:
+            continue
         start = format_timestamp(segment["start"])
         end = format_timestamp(segment["end"])
-        text = segment["text"].strip()
         lines.append(f"[{start} --> {end}] {text}")
     return "\n".join(lines)
 
@@ -194,7 +196,7 @@ def generate_subtitles(
     if file_obj is None:
         return "", None, "ファイルをアップロードしてください。"
 
-    file_path = file_obj.name
+    file_path = file_obj if isinstance(file_obj, str) else file_obj.name
     file_ext = Path(file_path).suffix.lower()
 
     if file_ext not in SUPPORTED_EXTENSIONS:
