@@ -68,25 +68,95 @@ def format_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
+# 日本語の自然な改行位置を判断するための文字セット
+_BREAK_PUNCT = set('。、！？…')
+_BREAK_PARTICLES = set('はがをにでともへやかねよわ')
+
+
+def find_natural_break(text: str, max_pos: int) -> int:
+    """max_pos文字以内で最も自然な改行位置を返す"""
+    limit = min(max_pos, len(text))
+    # 句読点の後を優先
+    for pos in range(limit, max(limit // 2, 1), -1):
+        if text[pos - 1] in _BREAK_PUNCT:
+            return pos
+    # 助詞の後
+    for pos in range(limit, max(limit // 2, 1), -1):
+        if text[pos - 1] in _BREAK_PARTICLES:
+            return pos
+    return limit
+
+
+def split_text_to_pages(text: str, max_chars: int = 15, max_lines: int = 2) -> list:
+    """テキストを字幕ページ（最大max_lines行×max_chars文字）のリストに分割する"""
+    pages = []
+    remaining = text.strip()
+
+    while remaining:
+        lines = []
+        for _ in range(max_lines):
+            if not remaining:
+                break
+            if len(remaining) <= max_chars:
+                lines.append(remaining)
+                remaining = ""
+                break
+            pos = find_natural_break(remaining, max_chars)
+            lines.append(remaining[:pos])
+            remaining = remaining[pos:]
+        if lines:
+            pages.append("\n".join(lines))
+
+    return pages if pages else [text.strip()]
+
+
+def expand_segment(segment: dict, max_chars: int = 15, max_lines: int = 2) -> list:
+    """セグメントを字幕エントリのリストに展開する（無音・空テキストはスキップ）"""
+    text = segment["text"].strip()
+    if not text:
+        return []
+
+    pages = split_text_to_pages(text, max_chars, max_lines)
+
+    if len(pages) == 1:
+        return [{"start": segment["start"], "end": segment["end"], "text": pages[0]}]
+
+    # 複数ページに分割する場合は時間を均等割り
+    duration = segment["end"] - segment["start"]
+    page_duration = duration / len(pages)
+    entries = []
+    for i, page_text in enumerate(pages):
+        entries.append({
+            "start": segment["start"] + i * page_duration,
+            "end": segment["start"] + (i + 1) * page_duration,
+            "text": page_text,
+        })
+    return entries
+
+
 def segments_to_srt(segments: list) -> str:
     """Whisperのセグメントデータをsrt形式に変換する"""
     srt_lines = []
-    for i, segment in enumerate(segments, start=1):
-        start = format_timestamp(segment["start"])
-        end = format_timestamp(segment["end"])
-        text = segment["text"].strip()
-        srt_lines.append(f"{i}\n{start} --> {end}\n{text}\n")
+    counter = 1
+    for segment in segments:
+        for entry in expand_segment(segment):
+            start = format_timestamp(entry["start"])
+            end = format_timestamp(entry["end"])
+            srt_lines.append(f"{counter}\n{start} --> {end}\n{entry['text']}\n")
+            counter += 1
     return "\n".join(srt_lines)
 
 
 def segments_to_vtt(segments: list) -> str:
     """Whisperのセグメントデータをvtt形式に変換する"""
     vtt_lines = ["WEBVTT\n"]
-    for i, segment in enumerate(segments, start=1):
-        start = format_timestamp(segment["start"]).replace(",", ".")
-        end = format_timestamp(segment["end"]).replace(",", ".")
-        text = segment["text"].strip()
-        vtt_lines.append(f"{i}\n{start} --> {end}\n{text}\n")
+    counter = 1
+    for segment in segments:
+        for entry in expand_segment(segment):
+            start = format_timestamp(entry["start"]).replace(",", ".")
+            end = format_timestamp(entry["end"]).replace(",", ".")
+            vtt_lines.append(f"{counter}\n{start} --> {end}\n{entry['text']}\n")
+            counter += 1
     return "\n".join(vtt_lines)
 
 
