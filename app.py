@@ -70,20 +70,24 @@ def format_timestamp(seconds: float) -> str:
 
 # 日本語の自然な改行位置を判断するための文字セット
 _BREAK_PUNCT = set('。、！？…')
-_BREAK_PARTICLES = set('はがをにでともへやかねよわ')
+# 'で' は「でした/です」と混在するため除外
+_BREAK_PARTICLES = set('はがをにともへやかねよわ')
 
 
 def find_natural_break(text: str, max_pos: int) -> int:
-    """max_pos文字以内で最も自然な改行位置を返す"""
+    """max_pos文字以内で最も自然な改行位置を返す（句読点優先、次いで助詞）"""
     limit = min(max_pos, len(text))
-    # 句読点の後を優先
-    for pos in range(limit, max(limit // 2, 1), -1):
+    last_punct = 0
+    last_particle = 0
+    for pos in range(1, limit + 1):
         if text[pos - 1] in _BREAK_PUNCT:
-            return pos
-    # 助詞の後
-    for pos in range(limit, max(limit // 2, 1), -1):
-        if text[pos - 1] in _BREAK_PARTICLES:
-            return pos
+            last_punct = pos
+        elif text[pos - 1] in _BREAK_PARTICLES:
+            last_particle = pos
+    if last_punct:
+        return last_punct
+    if last_particle:
+        return last_particle
     return limit
 
 
