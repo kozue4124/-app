@@ -233,7 +233,14 @@ def generate_subtitles(
             model = whisper.load_model(model_name)
 
             progress(0.5, desc="音声を文字起こししています（ファイルサイズにより時間がかかります）...")
-            transcribe_options = {"verbose": False}
+            transcribe_options = {
+                "verbose": False,
+                # ハルシネーション（無音部分への誤認識）対策
+                "no_speech_threshold": 0.4,        # 無音判定の閾値を下げる（デフォルト0.6）
+                "logprob_threshold": -0.5,          # 低確率セグメントを除外（デフォルト-1.0）
+                "compression_ratio_threshold": 2.0, # 繰り返しテキストを除外（デフォルト2.4）
+                "condition_on_previous_text": False, # 連鎖ハルシネーションを防止
+            }
             if language:
                 transcribe_options["language"] = language
 
