@@ -108,9 +108,9 @@ echo "起動中... ブラウザが自動で開きます"
 export PYTHONHTTPSVERIFY=0
 export REQUESTS_CA_BUNDLE=""
 export CURL_CA_BUNDLE=""
-# imageio_ffmpegのffmpegをPATHに追加（whisperも使えるようにする）
-FFMPEG_DIR=$(python -c "import imageio_ffmpeg, os; print(os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe()))")
-export PATH="$FFMPEG_DIR:$PATH"
+# imageio_ffmpegのバイナリをvenv/binにffmpegとしてリンク
+FFMPEG_EXE=$(python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())")
+ln -sf "$FFMPEG_EXE" venv/bin/ffmpeg
 kill $(lsof -ti:7860) 2>/dev/null
 sleep 1 && open http://localhost:7860 &
 python app.py
