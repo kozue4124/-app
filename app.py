@@ -76,23 +76,29 @@ _BREAK_PARTICLES = set('はがをにともへやかねよわ')
 
 
 def find_natural_break(text: str, max_pos: int) -> int:
-    """max_pos文字以内で最も自然な改行位置を返す（句読点優先、次いで助詞）"""
+    """max_pos文字以内で最も自然な改行位置を返す（句読点優先、次いで助詞、次いでスペース）"""
     limit = min(max_pos, len(text))
     last_punct = 0
     last_particle = 0
+    last_space = 0
     for pos in range(1, limit + 1):
-        if text[pos - 1] in _BREAK_PUNCT:
+        ch = text[pos - 1]
+        if ch in _BREAK_PUNCT:
             last_punct = pos
-        elif text[pos - 1] in _BREAK_PARTICLES:
+        elif ch in _BREAK_PARTICLES:
             last_particle = pos
+        elif ch in (' ', '\u3000') and pos > 1:  # 半角・全角スペースの直前で改行
+            last_space = pos - 1
     if last_punct:
         return last_punct
     if last_particle:
         return last_particle
+    if last_space:
+        return last_space
     return limit
 
 
-def split_text_to_pages(text: str, max_chars: int = 15, max_lines: int = 2) -> list:
+def split_text_to_pages(text: str, max_chars: int = 20, max_lines: int = 2) -> list:
     """テキストを字幕ページ（最大max_lines行×max_chars文字）のリストに分割する"""
     pages = []
     remaining = text.strip()
@@ -108,7 +114,7 @@ def split_text_to_pages(text: str, max_chars: int = 15, max_lines: int = 2) -> l
                 break
             pos = find_natural_break(remaining, max_chars)
             lines.append(remaining[:pos])
-            remaining = remaining[pos:]
+            remaining = remaining[pos:].lstrip(' \u3000')
         if lines:
             pages.append("\n".join(lines))
 
@@ -119,7 +125,7 @@ def split_text_to_pages(text: str, max_chars: int = 15, max_lines: int = 2) -> l
 _SYMBOL_ONLY = re.compile(r'^[♪♫♬♩\s\u3000。、．，！？…・〜～\-\.\(\)（）「」\[\]【】]+$')
 
 
-def expand_segment(segment: dict, max_chars: int = 15, max_lines: int = 2) -> list:
+def expand_segment(segment: dict, max_chars: int = 20, max_lines: int = 2) -> list:
     """セグメントを字幕エントリのリストに展開する（無音・空テキストはスキップ）"""
     text = segment["text"].strip()
     if not text:
