@@ -19,6 +19,7 @@ else
 """
 
 import os
+import re
 import tempfile
 import subprocess
 from pathlib import Path
@@ -130,10 +131,18 @@ def split_text_to_pages(text: str, max_chars: int = 15, max_lines: int = 2) -> l
     return pages if pages else [text.strip()]
 
 
+# 記号・音楽符号のみのテキスト（Whisperのハルシネーション）を検出
+_SYMBOL_ONLY = re.compile(r'^[♪♫♬♩\s\u3000。、．，！？…・〜～\-\.\(\)（）「」\[\]【】]+$')
+
+
 def expand_segment(segment: dict, max_chars: int = 15, max_lines: int = 2) -> list:
     """セグメントを字幕エントリのリストに展開する（無音・空テキストはスキップ）"""
     text = segment["text"].strip()
-    if not text or segment.get("no_speech_prob", 0) > 0.6:
+    if not text:
+        return []
+    if segment.get("no_speech_prob", 0) > 0.6:
+        return []
+    if _SYMBOL_ONLY.match(text):
         return []
 
     pages = split_text_to_pages(text, max_chars, max_lines)
