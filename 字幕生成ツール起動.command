@@ -7,8 +7,6 @@ cd "$(dirname "$0")"
 cat > app.py << 'APPEOF'
 import os, tempfile, subprocess, ssl, urllib.request
 from pathlib import Path
-import imageio_ffmpeg
-FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
 # SSL証明書エラーの回避
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -50,7 +48,7 @@ def run(file, model_label, lang_label, fmt, progress=gr.Progress()):
             if ext in VIDEO_EXT:
                 progress(0.3, desc="動画から音声を取り出しています...")
                 audio = os.path.join(tmp, "audio.wav")
-                r = subprocess.run([FFMPEG,"-i",path,"-vn","-acodec","pcm_s16le","-ar","16000","-ac","1","-y",audio], capture_output=True)
+                r = subprocess.run(["ffmpeg","-i",path,"-vn","-acodec","pcm_s16le","-ar","16000","-ac","1","-y",audio], capture_output=True)
                 if r.returncode != 0:
                     return "", None, "動画の処理に失敗しました。ffmpegをインストールしてください。"
             progress(0.4, desc="AIモデルを読み込んでいます...")
@@ -102,6 +100,9 @@ echo "起動中... ブラウザが自動で開きます"
 export PYTHONHTTPSVERIFY=0
 export REQUESTS_CA_BUNDLE=""
 export CURL_CA_BUNDLE=""
+# imageio_ffmpegのffmpegをPATHに追加（whisperも使えるようにする）
+FFMPEG_DIR=$(python -c "import imageio_ffmpeg, os; print(os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe()))")
+export PATH="$FFMPEG_DIR:$PATH"
 kill $(lsof -ti:7860) 2>/dev/null
 sleep 1 && open http://localhost:7860 &
 python app.py
